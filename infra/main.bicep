@@ -13,7 +13,7 @@ param location string
 // "resourceGroupName": {
 //      "value": "myGroupName"
 // }
-param apiServiceName string = ''
+param apiServiceNameOverride string = ''
 param applicationInsightsDashboardName string = ''
 param applicationInsightsName string = ''
 param appServicePlanName string = ''
@@ -39,6 +39,8 @@ var abbrs = loadJsonContent('./abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 
+var apiServiceName = !empty(apiServiceNameOverride) ? apiServiceNameOverride : '${abbrs.webSitesFunctions}api-${resourceToken}'
+
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
@@ -62,7 +64,7 @@ module api './app/api.bicep' = {
   name: 'api'
   scope: rg
   params: {
-    name: !empty(apiServiceName) ? apiServiceName : '${abbrs.webSitesFunctions}api-${resourceToken}'
+    name: apiServiceName
     location: location
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName
@@ -110,12 +112,15 @@ module appServicePlan './core/host/appserviceplan.bicep' = {
     name: !empty(appServicePlanName) ? appServicePlanName : '${abbrs.webServerFarms}${resourceToken}'
     location: location
     tags: tags
+    kind: 'functionapp'
     sku: {
-      name: 'Y1'
-      tier: 'Dynamic'
+      tier: 'FlexConsumption'
+      name: 'FC1'
     }
+    reserved: true
   }
 }
+
 
 // Backing storage for Azure functions backend API
 module storage './core/storage/storage-account.bicep' = {
@@ -125,6 +130,10 @@ module storage './core/storage/storage-account.bicep' = {
     name: !empty(storageAccountName) ? storageAccountName : '${abbrs.storageStorageAccounts}${resourceToken}'
     location: location
     tags: tags
+    containers: [
+      // deployment storage container
+      {name: apiServiceName}
+    ]
   }
 }
 
